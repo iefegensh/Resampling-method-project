@@ -1,0 +1,412 @@
+---
+title: "STAT403FinalProject"
+author: "TaoZhang"
+date: "2024-05-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+```
+
+
+```{r}
+library(mlbench)
+library(tidyverse)
+library(corrplot)
+library(dplyr)
+library(ggplot2)
+library(ggcorrplot)
+library(boot)
+```
+
+
+```{r}
+data <- read.csv("admission.csv")
+show(data)
+data$SOP <- factor(data$SOP)
+data$University.Rating <- factor(data$University.Rating)
+data$LOR <- factor(data$LOR)
+data$Research <- factor(data$Research)
+data$admit_factor <- ifelse(data$Chance.of.Admit >= 0.5, 1, 0)
+data$admit_factor <- as.factor(data$admit_factor)
+```
+```{r}
+pairs(data)
+numeric_data <- data %>% select(GRE.Score, TOEFL.Score, CGPA, Chance.of.Admit)
+cor_matrix <- cor(numeric_data)
+
+print(cor_matrix)
+ggcorrplot(cor_matrix, method = "square", lab = TRUE)
+data$admit_factor <- ifelse(data$Chance.of.Admit >= 0.5, "1", "0")
+```
+
+
+
+```{r}
+table(data$admit_factor, data$Research)
+chisq.test(data$admit_factor, data$Research)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+model1 <- lm(Chance.of.Admit ~ GRE.Score + TOEFL.Score + CGPA, data = data)
+summary(model1)
+```
+
+
+```{r}
+model2 <- lm(Chance.of.Admit ~ GRE.Score + TOEFL.Score + CGPA + as.factor(University.Rating), data = data)
+model3 <- lm(Chance.of.Admit ~ GRE.Score + TOEFL.Score + CGPA + as.factor(SOP), data = data)
+model4 <- lm(Chance.of.Admit ~ GRE.Score + TOEFL.Score + CGPA + as.factor(LOR), data = data)
+anova(model2, model1, test="Chisq")
+anova(model3, model1, test="Chisq")
+anova(model4, model1, test="Chisq")
+```
+
+
+
+```{r}
+model <- lm(Chance.of.Admit ~ GRE.Score + TOEFL.Score + CGPA + as.factor(University.Rating) + as.factor(LOR) + as.factor(Research), data = data)
+summary(model)
+```
+
+
+
+```{r}
+model <- lm(Chance.of.Admit ~ GRE.Score + TOEFL.Score + CGPA + as.factor(University.Rating) + as.factor(LOR) + as.factor(Research), data = data)
+
+# Extract coefficient names from the original model
+coef_names <- names(coef(model))
+num_coef <- length(coef_names)
+
+# Define a function to ensure the coefficient vector has the correct names and length
+ensure_coef_names <- function(coefs) {
+  full_coefs <- rep(NA, num_coef)
+  names(full_coefs) <- coef_names
+  full_coefs[names(coefs)] <- coefs
+  return(full_coefs)
+}
+
+# Define the bootstrap function for empirical bootstrap
+boot_empirical <- function(data, indices) {
+  d <- data[indices, ]
+  fit <- lm(Chance.of.Admit ~ GRE.Score + TOEFL.Score + CGPA + as.factor(University.Rating) + as.factor(LOR) + as.factor(Research), data = d)
+  coefs <- ensure_coef_names(coef(fit))
+  return(coefs)
+}
+
+# Define the bootstrap function for residual bootstrap
+boot_residual <- function(data, indices) {
+  fit <- lm(Chance.of.Admit ~ GRE.Score + TOEFL.Score + CGPA + as.factor(University.Rating) + as.factor(LOR) + as.factor(Research), data = data)
+  residuals <- fit$residuals
+  boot_res <- residuals[indices]
+  y_boot <- fitted(fit) + boot_res
+  fit_boot <- lm(y_boot ~ GRE.Score + TOEFL.Score + CGPA + as.factor(University.Rating) + as.factor(LOR) + as.factor(Research), data = data)
+  coefs <- ensure_coef_names(coef(fit_boot))
+  return(coefs)
+}
+
+# Define the bootstrap function for wild bootstrap
+boot_wild <- function(data, indices) {
+  fit <- lm(Chance.of.Admit ~ GRE.Score + TOEFL.Score + CGPA + as.factor(University.Rating) + as.factor(LOR) + as.factor(Research), data = data)
+  residuals <- fit$residuals
+  wild_res <- residuals * sample(c(-1, 1), length(residuals), replace = TRUE)
+  y_wild <- fitted(fit) + wild_res
+  fit_wild <- lm(y_wild ~ GRE.Score + TOEFL.Score + CGPA + as.factor(University.Rating) + as.factor(LOR) + as.factor(Research), data = data)
+  coefs <- ensure_coef_names(coef(fit_wild))
+  return(coefs)
+}
+
+# Perform bootstrap
+set.seed(123)
+results_empirical <- boot(data, boot_empirical, R = 1000)
+results_residual <- boot(data, boot_residual, R = 1000)
+results_wild <- boot(data, boot_wild, R = 1000)
+
+# Calculate variances
+var_empirical <- apply(results_empirical$t, 2, var)
+var_residual <- apply(results_residual$t, 2, var)
+var_wild <- apply(results_wild$t, 2, var)
+
+# Combine results in a matrix
+var_matrix <- rbind(var_empirical, var_residual, var_wild)
+colnames(var_matrix) <- coef_names
+rownames(var_matrix) <- c("Empirical", "Residual", "Wild")
+
+# Print the variance matrix
+print(var_matrix)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+table(data$University.Rating)
+data1 = filter(data, data$University.Rating == 1)
+plot(data1$CGPA, data1$Chance.of.Admit)
+
+data2 = filter(data, data$University.Rating == 2)
+plot(data2$CGPA, data2$Chance.of.Admit)
+
+data3 = filter(data, data$University.Rating == 3)
+plot(data3$CGPA, data3$Chance.of.Admit)
+
+data4 = filter(data, data$University.Rating == 4)
+plot(data4$CGPA, data4$Chance.of.Admit)
+
+data5 = filter(data, data$University.Rating == 5)
+plot(data5$CGPA, data5$Chance.of.Admit)
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+data <- read.csv("admission.csv")
+data$admit_factor <- ifelse(data$Chance.of.Admit >= 0.5, 1, 0)
+data$admit_factor <- as.factor(data$admit_factor)
+show(data)
+```
+
+
+```{r}
+# Load necessary libraries
+library(boot)
+
+# Load the dataset
+
+# Fit the initial logistic regression model
+initial_model <- glm(admit_factor ~ as.factor(University.Rating) + CGPA, family = binomial, data = data)
+
+summary_model <- summary(initial_model)
+
+# Extract the coefficients and standard errors from the summary
+summary_se <- summary_model$coefficients[, "Std. Error"]
+
+# Define a function to perform the parametric bootstrap
+parametric_bootstrap <- function(data, indices) {
+  simulated_data <- data
+  simulated_data$admit_factor <- rbinom(n = nrow(data), size = 1, prob = predict(initial_model, type = "response"))
+  boot_model <- glm(admit_factor ~ as.factor(University.Rating) + CGPA, family = binomial, data = simulated_data)
+  return(coef(boot_model))
+}
+
+
+B <- 100
+parametric_results <- boot(data = data, statistic = parametric_bootstrap, R = B)
+parametric_se <- apply(parametric_results$t, 2, sd)
+
+# Define a function to perform the empirical bootstrap
+empirical_bootstrap <- function(data, indices) {
+  boot_data <- data[indices, ]
+  boot_model <- glm(admit_factor ~ as.factor(University.Rating) + CGPA, family = binomial, data = boot_data)
+  return(coef(boot_model))
+}
+
+# Perform the empirical bootstrap with B = 10,000 samples
+empirical_results <- boot(data = data, statistic = empirical_bootstrap, R = B)
+empirical_se <- apply(empirical_results$t, 2, sd)
+
+# Create a matrix to compare the standard errors
+se_matrix <- rbind(summary_se, parametric_se, empirical_se)
+rownames(se_matrix) <- c("Summary SE", "Parametric Bootstrap SE", "Empirical Bootstrap SE")
+colnames(se_matrix) <- names(coef(initial_model))
+
+# Display the matrix
+print(se_matrix)
+
+```
+
+
+```{r}
+table(data$University.Rating)
+```
+
+
+```{r}
+data$admit_factor = as.factor(data$admit_factor)
+data1 <- filter(data, University.Rating == 1)
+model1 <- glm(as.factor(admit_factor) ~ GRE.Score + TOEFL.Score + CGPA + as.factor(LOR) + as.factor(Research), data = data1, family = binomial)
+
+data2 <- filter(data, University.Rating == 2)
+model2 <- glm(as.factor(admit_factor) ~ GRE.Score + TOEFL.Score + CGPA + as.factor(LOR) + as.factor(Research), data = data2, family = binomial)
+
+data3 <- filter(data, University.Rating == 3)
+model3 <- glm(as.factor(admit_factor) ~ GRE.Score + TOEFL.Score + CGPA + as.factor(LOR) + as.factor(Research), data = data3, family = binomial)
+
+data4 <- filter(data, University.Rating == 4)
+model4 <- glm(as.factor(admit_factor) ~ GRE.Score + TOEFL.Score + CGPA + as.factor(LOR) + as.factor(Research), data = data4, family = binomial)
+
+data5 <- filter(data, University.Rating == 5)
+model5 <- glm(as.factor(admit_factor) ~ GRE.Score + TOEFL.Score + CGPA + as.factor(LOR) + as.factor(Research), data = data5, family = binomial)
+
+# Print the summaries of the models
+summary(model1)
+summary(model2)
+summary(model3)
+summary(model4)
+summary(model5)
+coef(model1)["CGPA"]
+coef(model2)["CGPA"]
+coef(model3)["CGPA"]
+coef(model4)["CGPA"]
+coef(model5)["CGPA"]
+```
+
+
+```{r}
+cgpa_coefficients <- data.frame(
+  University.Rating = integer(),
+  CGPA_Coefficient = numeric()
+)
+
+# Fit GLM for each University Rating and store CGPA coefficients
+for (rating in 1:5) {
+  data_subset <- filter(data, University.Rating == rating)
+  model <- glm(as.factor(admit_factor) ~ GRE.Score + TOEFL.Score + CGPA + as.factor(LOR) + as.factor(Research), data = data_subset, family = binomial)
+  cgpa_coef <- coef(model)["CGPA"]
+  cgpa_coefficients <- rbind(cgpa_coefficients, data.frame(University.Rating = rating, CGPA_Coefficient = cgpa_coef))
+}
+
+# Plot the CGPA coefficients for each University Rating
+ggplot(cgpa_coefficients, aes(x = University.Rating, y = CGPA_Coefficient)) +
+  geom_point() +
+  geom_line() +
+  labs(title = "CGPA Coefficient by University Rating",
+       x = "University Rating",
+       y = "CGPA Coefficient") +
+  theme_minimal()
+```
+
+```{r}
+library(ggplot2)
+
+
+colors <- c('red', 'blue', 'green', 'purple', 'orange')
+ratings <- 1:5
+bw <- 0.2
+B <- 10000  
+
+
+par(mar = c(5, 4, 4, 8), xpd = TRUE)
+
+plot(1, type = "n", xlim = c(min(data$CGPA), max(data$CGPA)), ylim = c(0, 1), 
+     xlab = "CGPA", ylab = "Density", main = "CGPA Density for University Ratings")
+
+for (rating in ratings) {
+  subset_data <- data[data$University.Rating == rating, ]$CGPA
+  
+  kde_orig <- density(subset_data, bw = bw)
+  lines(kde_orig, lwd = 3, col = colors[rating])
+  
+  bootstrap_kde <- matrix(NA, nrow = B, ncol = length(kde_orig$y))
+  set.seed(123)
+  for (b in 1:B) {
+    boot_sample <- sample(subset_data, length(subset_data), replace = TRUE)
+    kde_boot <- density(boot_sample, bw = bw)
+    bootstrap_kde[b, ] <- kde_boot$y
+  }
+  
+  kde_mean <- apply(bootstrap_kde, 2, mean)
+  kde_ci_lower <- apply(bootstrap_kde, 2, quantile, probs = 0.025)
+  kde_ci_upper <- apply(bootstrap_kde, 2, quantile, probs = 0.975)
+  
+  
+  #polygon(c(kde_orig$x, rev(kde_orig$x)), c(kde_ci_upper, rev(kde_ci_lower)), 
+          #col = adjustcolor(colors[rating], alpha.f = 0.2), border = NA)
+  lines(kde_orig$x, kde_mean, lwd = 2, col = colors[rating], lty = 2)
+}
+
+# 添加图例，标注虚线
+legend("topright", inset = c(-0.3, 0), legend = c(paste('Rating', ratings), 'Bootstrap Mean'), 
+       col = c(colors, 'black'), lwd = c(rep(3, length(ratings)), 2), lty = c(rep(1, length(ratings)), 2), 
+       xpd = TRUE, bty = "n")
+
+```
+
+
+
+```{r}
+
+fit_logistic_interaction <- glm(Chance.of.Admit ~ CGPA * as.factor(University.Rating), 
+                                data = data, family = "binomial")
+
+
+summary(fit_logistic_interaction)
+
+coef(summary(fit_logistic_interaction))
+
+
+library(ggplot2)
+
+pred_data <- expand.grid(CGPA = seq(min(data$CGPA), max(data$CGPA), length.out = 100),
+                         University.Rating = factor(ratings))
+pred_data$Predicted_Probability <- predict(fit_logistic_interaction, newdata = pred_data, type = "response")
+
+ggplot(pred_data, aes(x = CGPA, y = Predicted_Probability, color = University.Rating)) +
+  geom_line(size = 1) +
+  labs(title = "Interaction Effect of CGPA and University Rating on Admission Probability",
+       x = "CGPA", y = "Predicted Admission Probability") +
+  scale_color_manual(values = colors) +
+  theme_minimal()
+
+```
+
+
+
+
+
+
+
+
+
